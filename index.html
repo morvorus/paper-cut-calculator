@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>โปรแกรมคำนวณตัดกระดาษ</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root{
+  --bg: #F5F3EC;
+  --grid-line: #E3DFD1;
+  --ink: #24262B;
+  --ink-soft: #5B5F6A;
+  --blue: #2954A3;
+  --blue-deep: #17356E;
+  --orange: #E8622C;
+  --teal: #1E8C7D;
+  --paper: #FFFFFF;
+  --line: #C9C4B2;
+  --radius: 6px;
+}
+
+*{ box-sizing:border-box; }
+
+html,body{
+  margin:0; padding:0;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--bg);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', sans-serif;
+  min-height: 100vh;
+}
+
+.mono{ font-family:'IBM Plex Mono', monospace; }
+
+.app{
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+
+.masthead{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 22px;
+}
+.masthead h1{
+  font-family:'Space Grotesk', 'IBM Plex Sans Thai', sans-serif;
+  font-size: 22px;
+  font-weight:700;
+  letter-spacing: 0.2px;
+  margin:0;
+}
+.masthead .tag{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--paper);
+}
+
+.steps{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  margin-bottom: 22px;
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.steps .mode-tag{ margin-left: auto; }
+.step-pill{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+}
+.step-pill.clickable{ cursor: pointer; transition: border-color .15s, background .15s; }
+.step-pill.clickable:hover{ border-color: var(--blue); background: #EAF0FB; }
+.step-pill.active{
+  border-color: var(--blue);
+  color: var(--blue-deep);
+  background: #EAF0FB;
+  font-weight:600;
+}
+.step-pill.done{
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.step-num{
+  width:16px;height:16px;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;
+  background: currentColor;
+  color: var(--paper) !important;
+}
+.step-num span{ color: var(--paper); }
+
+.card{
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 18px;
+  position: relative;
+}
+.card::before{
+  content:'';
+  position:absolute;
+  top:10px; left:10px; right:10px; bottom:10px;
+  border: 1px dashed transparent;
+  pointer-events:none;
+}
+
+.section-title{
+  font-family:'Space Grotesk','IBM Plex Sans Thai', sans-serif;
+  font-size: 17px;
+  font-weight:700;
+  margin: 0 0 4px;
+}
+.section-sub{
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+
+.preset-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px,1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.preset-btn{
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  cursor:pointer;
+  text-align:left;
+  transition: border-color .15s, background .15s, transform .1s;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.preset-btn:hover{ border-color: var(--blue); transform: translateY(-1px); }
+.preset-btn.selected{
+  border-color: var(--blue);
+  background: #EAF0FB;
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+.preset-icon{
+  width: 40px; height: 30px;
+  border: 1.5px solid var(--blue-deep);
+  border-radius: 2px;
+  background: repeating-linear-gradient(45deg, #f0f4fb, #f0f4fb 4px, #e4ecf9 4px, #e4ecf9 8px);
+}
+.preset-label{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight:600;
+}
+.preset-label small{ color: var(--ink-soft); font-weight:400; }
+.preset-note{
+  align-self: flex-start;
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--teal);
+  background: #E8F5F2;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.custom-toggle{
+  border: 1px dashed var(--line);
+}
+.custom-toggle .preset-icon{ background: none; border-style:dashed; }
+
+.field-row{
+  display:flex;
+  gap: 14px;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  margin-top: 6px;
+}
+.field{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.field label{
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-family:'IBM Plex Mono', monospace;
+}
+.field input{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 15px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  width: 120px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.field input:focus{ outline:2px solid var(--blue); outline-offset:1px; background: var(--paper); }
+.field .unit{ color: var(--ink-soft); font-size:12px; }
+.field .fixed-value{
+  font-size: 15px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  width: 150px;
+  background: #EEECE3;
+  color: var(--ink-soft);
+  display:flex;
+  align-items:baseline;
+  gap:6px;
+}
+
+.qty-field{ max-width: 260px; }
+
+.btn{
+  font-family:'IBM Plex Mono', monospace;
+  font-weight:600;
+  font-size: 14px;
+  padding: 11px 20px;
+  border-radius: 4px;
+  border: none;
+  cursor:pointer;
+  transition: opacity .15s, transform .1s;
+}
+.btn:hover{ opacity:.9; }
+.btn:active{ transform: translateY(1px); }
+.btn-primary{ background: var(--blue-deep); color:#fff; }
+.btn-ghost{ background:transparent; color: var(--ink-soft); border:1px solid var(--line); }
+.btn:disabled{ opacity:.4; cursor:not-allowed; }
+
+.actions{ display:flex; justify-content:space-between; align-items:center; margin-top: 8px; }
+
+.error-msg{
+  color: var(--orange);
+  font-size: 13px;
+  font-family:'IBM Plex Mono', monospace;
+  margin-top: 8px;
+}
+
+.result-layout{
+  display:grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 720px){
+  .result-layout{ grid-template-columns: 1fr; }
+}
+
+.diagram-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap: 10px;
+}
+.diagram-caption{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align:center;
+}
+
+.leftover-list{
+  display:flex;
+  flex-direction:column;
+  gap: 4px;
+  margin-top: 10px;
+  width: 100%;
+}
+.leftover-item{
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5C1A14;
+  background: #F5B7B1;
+  border: 1px solid #922B21;
+  border-radius: 4px;
+  padding: 8px 12px;
+  display:flex;
+  align-items:center;
+  gap: 8px;
+}
+.leftover-item b{ font-weight: 700; font-size: 15px; }
+.leftover-dot{
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #922B21;
+  flex-shrink: 0;
+}
+
+.legend{
+  display:flex;
+  gap: 16px;
+  flex-wrap:wrap;
+  font-size: 12px;
+  font-family:'IBM Plex Mono', monospace;
+}
+.legend-item{ display:flex; align-items:center; gap:6px; }
+.swatch{ width:12px; height:12px; border-radius:2px; }
+
+.stat-card{
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--bg);
+}
+.stat-headline{
+  font-family:'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight:700;
+  color: var(--blue-deep);
+  line-height:1;
+}
+.stat-headline .unit{ font-size:13px; color: var(--ink-soft); font-weight:500; margin-left:6px; }
+.stat-sub{ font-size:13px; color: var(--ink-soft); margin-top:4px; }
+
+.breakdown{
+  margin-top: 16px;
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+}
+.breakdown-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.breakdown-row .label{ display:flex; align-items:center; gap:8px; font-size:13px; }
+.breakdown-row .value{ font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:16px; }
+
+.qty-box{
+  margin-top: 16px;
+  padding: 20px;
+  border-radius: 6px;
+  background: #FDF1EA;
+  border: 1.5px solid #F0C6AC;
+}
+.qty-box .headline{ font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:40px; color: var(--orange); line-height:1.2; }
+.qty-box .headline .unit{ font-size:15px; color: var(--ink-soft); font-weight:500; margin-left:6px; }
+.qty-box .headline-big{ font-family:'IBM Plex Mono', monospace; font-weight:700; font-size:24px; color: var(--orange); line-height:1.1; }
+.qty-box .headline-big .unit{ font-size:13px; color: var(--ink-soft); font-weight:500; margin-left:6px; }
+.qty-box .qty-label{ font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color: var(--ink-soft); font-family:'IBM Plex Mono', monospace; margin-bottom:2px; }
+.qty-box .qty-secondary{
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1.5px dashed #F0C6AC;
+}
+.qty-box .sub{ font-size:14px; color: var(--ink-soft); margin-top:14px; }
+
+.size-frame{
+  display:flex;
+  align-items:stretch;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.size-box{
+  flex: 1;
+  min-width: 190px;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  background: var(--bg);
+}
+.size-box.big{ border-color: var(--blue); }
+.size-box.small{ border-color: var(--teal); }
+.size-box .size-swatch{
+  width: 30px; height: 30px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.size-box.big .size-swatch{ color: var(--blue); background: #EAF0FB; }
+.size-box.small .size-swatch{ color: var(--teal); background: #E8F5F2; }
+.size-box .size-text .size-label{
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-family: 'IBM Plex Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.size-box .size-text .size-value{
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  font-size: 17px;
+  margin-top: 2px;
+}
+.size-box .size-text .size-sub{
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 1px;
+}
+.size-arrow{
+  display:flex;
+  align-items:center;
+  color: var(--ink-soft);
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 18px;
+  padding: 0 2px;
+}
+
+.footer-note{
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-align:center;
+  margin-top: 24px;
+  font-family:'IBM Plex Mono', monospace;
+}
+
+.mode-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px,1fr));
+  gap: 14px;
+}
+.mode-btn{
+  border: 1.5px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 22px 18px;
+  cursor:pointer;
+  transition: border-color .15s, background .15s, transform .1s;
+}
+.mode-btn:hover{ border-color: var(--blue); transform: translateY(-1px); background: #EAF0FB; }
+.mode-btn-title{
+  font-family:'Space Grotesk', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--blue-deep);
+  margin-bottom: 6px;
+}
+.mode-btn-sub{
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.mode-tag{
+  display:inline-block;
+  font-family:'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blue-deep);
+  background: #EAF0FB;
+  border: 1px solid #C7D6EF;
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-left: 8px;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.mode-tag:hover{ background: #DCE7FA; border-color: var(--blue); }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+const MODES = {
+  standard: {
+    label: 'ขนาดกระดาษมาตรฐาน',
+    presets: [
+      {w:31, h:43, unit:'นิ้ว'},
+      {w:24, h:35, unit:'นิ้ว'},
+      {w:25.5, h:35.5, unit:'นิ้ว'},
+      {w:25, h:36, unit:'นิ้ว'},
+      {w:35, h:47, unit:'นิ้ว'},
+    ]
+  },
+  printshop: {
+    label: 'กระดาษโรงพิมพ์',
+    presets: [
+      {w:24, h:17.5, unit:'นิ้ว'},
+      {w:25, h:18, unit:'นิ้ว'},
+      {w:15.5, h:21.5, unit:'นิ้ว'},
+      {w:25, h:12, unit:'นิ้ว'},
+      {w:24, h:11.66, unit:'นิ้ว'},
+      {w:74, h:53, unit:'ซม.'},
+      {w:30.4, h:44.4, unit:'ซม.', note:'Digital'},
+      {w:31.6, h:45.6, unit:'ซม.', note:'Digital'},
+      {w:33, h:48.8, unit:'ซม.', note:'Digital'},
+    ]
+  }
+};
+
+let state = {
+  mode: null,
+  step: 1,
+  selectedPreset: 0,
+  customW: '', customH: '',
+  smallW: '', smallH: '',
+  qty: '',
+  error: ''
+};
+
+function fmt(n){
+  if (Number.isInteger(n)) return n.toString();
+  return (Math.round(n*100)/100).toString();
+}
+
+function inToCm(inch){
+  return Math.round((inch*2.54)*100)/100;
+}
+
+function toCm(v, unit){
+  return unit === 'ซม.' ? v : inToCm(v);
+}
+
+function getBigSizeIn(){
+  if (state.selectedPreset === -1){
+    return { w: parseFloat(state.customW), h: parseFloat(state.customH), unit: 'นิ้ว' };
+  }
+  const p = MODES[state.mode].presets[state.selectedPreset];
+  return { w: p.w, h: p.h, unit: p.unit || 'นิ้ว', note: p.note };
+}
+
+function buildGrid(nx, ny, offX, offY, pw, ph, orient){
+  const cells = [];
+  for(let j=0;j<ny;j++){
+    for(let i=0;i<nx;i++){
+      cells.push({ x: offX + i*pw, y: offY + j*ph, w: pw, h: ph, orient });
+    }
+  }
+  return cells;
+}
+
+function computeBest(W,H,w,h){
+  const strategies = [];
+
+  function push(mainPw, mainPh, mainOrient, splitDir){
+    const nx = Math.floor(W/mainPw);
+    const ny = Math.floor(H/mainPh);
+    const mainCells = buildGrid(nx, ny, 0, 0, mainPw, mainPh, mainOrient);
+    const otherPw = mainPh, otherPh = mainPw;
+    const otherOrient = mainOrient === 'A' ? 'B' : 'A';
+    let extraCells = [];
+    let exCount = 0;
+    let geo;
+    if (splitDir === 'col'){
+      const usedW = nx*mainPw;
+      const remW = W - usedW;
+      const exW = Math.floor(remW/otherPw);
+      const exH = Math.floor(H/otherPh);
+      extraCells = buildGrid(exW, exH, usedW, 0, otherPw, otherPh, otherOrient);
+      exCount = exW*exH;
+      geo = { mainW: nx*mainPw, mainH: ny*mainPh, extraX: usedW, extraY: 0, extraW: exW*otherPw, extraH: exH*otherPh, splitDir };
+    } else {
+      const usedH = ny*mainPh;
+      const remH = H - usedH;
+      const exH2 = Math.floor(remH/otherPh);
+      const exW2 = Math.floor(W/otherPw);
+      extraCells = buildGrid(exW2, exH2, 0, usedH, otherPw, otherPh, otherOrient);
+      exCount = exW2*exH2;
+      geo = { mainW: nx*mainPw, mainH: ny*mainPh, extraX: 0, extraY: usedH, extraW: exW2*otherPw, extraH: exH2*otherPh, splitDir };
+    }
+    strategies.push({
+      cells: mainCells.concat(extraCells),
+      mainCount: nx*ny,
+      mainOrient,
+      extraCount: exCount,
+      extraOrient: otherOrient,
+      total: nx*ny + exCount,
+      geo
+    });
+  }
+
+  push(w, h, 'A', 'col');
+  push(w, h, 'A', 'row');
+  push(h, w, 'B', 'col');
+  push(h, w, 'B', 'row');
+
+  let best = strategies[0];
+  for(const s of strategies){ if (s.total > best.total) best = s; }
+  return best;
+}
+
+function computeLeftoverRects(W, H, geo){
+  const rects = [];
+  const push = (x,y,w,h) => { if (w>0.01 && h>0.01) rects.push({x,y,w,h}); };
+
+  if (geo.splitDir === 'col'){
+    // leftover under the main block
+    push(0, geo.mainH, geo.mainW, H - geo.mainH);
+    // leftover under the extra block
+    push(geo.extraX, geo.extraY + geo.extraH, geo.extraW, H - (geo.extraY + geo.extraH));
+    // leftover to the right of everything
+    push(geo.extraX + geo.extraW, 0, W - (geo.extraX + geo.extraW), H);
+  } else {
+    // leftover to the right of the main block
+    push(geo.mainW, 0, W - geo.mainW, geo.mainH);
+    // leftover to the right of the extra block
+    push(geo.extraX + geo.extraW, geo.extraY, W - (geo.extraX + geo.extraW), geo.extraH);
+    // leftover below everything
+    push(0, geo.extraY + geo.extraH, W, H - (geo.extraY + geo.extraH));
+  }
+
+  return rects;
+}
+
+function leftoverReadings(r, W, H){
+  // Returns an array of {label, value} — always a single number per reading,
+  // never a combined W×H. Strip rects (spanning the full width or height)
+  // yield one reading; corner rects yield two (one per direction).
+  const touchesRight = Math.abs((r.x + r.w) - W) < 0.05;
+  const touchesBottom = Math.abs((r.y + r.h) - H) < 0.05;
+  const touchesLeft = Math.abs(r.x) < 0.05;
+  const touchesTop = Math.abs(r.y) < 0.05;
+  const fullWidth = touchesLeft && touchesRight;
+  const fullHeight = touchesTop && touchesBottom;
+
+  const readings = [];
+  if (fullWidth){
+    readings.push({ label: touchesBottom ? 'มุมล่าง' : 'มุมบน', value: r.h, axis: 'v' });
+  } else if (fullHeight){
+    readings.push({ label: touchesRight ? 'มุมขวา' : 'มุมซ้าย', value: r.w, axis: 'h' });
+  } else {
+    if (touchesBottom) readings.push({ label: 'มุมล่าง', value: r.h, axis: 'v' });
+    else if (touchesTop) readings.push({ label: 'มุมบน', value: r.h, axis: 'v' });
+    if (touchesRight) readings.push({ label: 'มุมขวา', value: r.w, axis: 'h' });
+    else if (touchesLeft) readings.push({ label: 'มุมซ้าย', value: r.w, axis: 'h' });
+  }
+  return readings;
+}
+
+
+function orientLabel(orient, w, h){
+  // orient 'A' means piece placed as (w wide, h tall) as entered; 'B' means rotated 90deg
+  const pw = orient === 'A' ? w : h;
+  const ph = orient === 'A' ? h : w;
+  const isLandscape = pw >= ph;
+  return {
+    text: isLandscape ? 'แนวนอน' : 'แนวตั้ง',
+    pw, ph
+  };
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  const masthead = document.createElement('div');
+  masthead.className = 'masthead';
+  masthead.innerHTML = `
+    <h1>คำนวณตัดกระดาษ</h1>
+    <div class="tag">CUT&nbsp;PLANNER</div>
+  `;
+  app.appendChild(masthead);
+
+  if (state.mode === null){
+    renderModeSelect(app);
+    const note = document.createElement('div');
+    note.className = 'footer-note';
+    note.textContent = 'คำนวณจากการตัดแบบกิโยติน (guillotine cut) ไม่รวมระยะเผื่อตัด (bleed) หรือระยะขอบจับเครื่องพิมพ์';
+    app.appendChild(note);
+    return;
+  }
+
+  const steps = document.createElement('div');
+  steps.className = 'steps';
+  steps.innerHTML = `
+    <div class="step-pill ${state.step===1?'active':'done'}" id="step-pill-1">
+      <span class="step-num"><span>1</span></span> เลือกกระดาษแผ่นใหญ่
+    </div>
+    <div class="step-pill ${state.step===2?'active':(state.step>2?'done':'')}" id="step-pill-2">
+      <span class="step-num"><span>2</span></span> ใส่ขนาดกระดาษเล็ก
+    </div>
+    <div class="step-pill ${state.step===3?'active':''}" id="step-pill-3">
+      <span class="step-num"><span>3</span></span> ผลการตัด
+    </div>
+    <button class="mode-tag" id="mode-tag-btn" title="กลับไปเลือกเครื่อง">${MODES[state.mode].label} ✕</button>
+  `;
+  app.appendChild(steps);
+  steps.querySelector('#mode-tag-btn').addEventListener('click', () => {
+    state.mode = null;
+    render();
+  });
+  for (let n = 1; n <= 3; n++){
+    const pill = steps.querySelector(`#step-pill-${n}`);
+    if (n <= state.step){
+      pill.classList.add('clickable');
+      pill.addEventListener('click', () => {
+        if (n === state.step) return;
+        state.step = n;
+        render();
+      });
+    }
+  }
+
+  if (state.step === 1) renderStep1(app);
+  if (state.step === 2) renderStep2(app);
+  if (state.step === 3) renderStep3(app);
+
+  const note = document.createElement('div');
+  note.className = 'footer-note';
+  note.textContent = 'คำนวณจากการตัดแบบกิโยติน (guillotine cut) ไม่รวมระยะเผื่อตัด (bleed) หรือระยะขอบจับเครื่องพิมพ์';
+  app.appendChild(note);
+}
+
+function renderModeSelect(app){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="section-title">เลือกชุดกระดาษแผ่นใหญ่</div>
+    <div class="section-sub">เลือกว่าจะใช้ขนาดกระดาษแผ่นใหญ่จากชุดไหน — ขั้นตอนถัดไปเหมือนกันทั้งสองแบบ</div>
+    <div class="mode-grid" id="mode-grid"></div>
+  `;
+  app.appendChild(card);
+
+  const grid = card.querySelector('#mode-grid');
+  Object.keys(MODES).forEach(key => {
+    const m = MODES[key];
+    const btn = document.createElement('div');
+    btn.className = 'mode-btn';
+    btn.innerHTML = `
+      <div class="mode-btn-title">${m.label}</div>
+      <div class="mode-btn-sub mono">${m.presets.length} ขนาดให้เลือก + กำหนดเอง</div>
+    `;
+    btn.addEventListener('click', () => {
+      state.mode = key;
+      state.step = 1;
+      state.selectedPreset = 0;
+      render();
+    });
+    grid.appendChild(btn);
+  });
+}
+
+function renderStep1(app){
+  const modePresets = MODES[state.mode].presets;
+  const heading = state.mode === 'printshop' ? 'กระดาษลงเครื่อง Offset' : 'ขนาดกระดาษแผ่นใหญ่';
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="section-title">${heading}</div>
+    <div class="section-sub">เลือกจากขนาดที่ใช้บ่อย หรือกำหนดขนาดเอง (หน่วยเป็นนิ้ว เว้นแต่ระบุเป็น ซม.)</div>
+    <div class="preset-grid" id="preset-grid"></div>
+    <div id="custom-fields"></div>
+    <div class="error-msg" id="err1" style="display:none;"></div>
+    <div class="actions" style="margin-top:20px;">
+      <button class="btn btn-ghost" id="switch-mode">← กลับไปเลือกเครื่อง</button>
+      <button class="btn btn-primary" id="next1">ถัดไป →</button>
+    </div>
+  `;
+  app.appendChild(card);
+
+  card.querySelector('#switch-mode').addEventListener('click', () => { state.mode = null; render(); });
+
+  const grid = card.querySelector('#preset-grid');
+  modePresets.forEach((p, idx) => {
+    const btn = document.createElement('div');
+    btn.className = 'preset-btn' + (state.selectedPreset===idx ? ' selected':'');
+    const ratio = p.w/p.h;
+    const iconW = ratio>=1 ? 40 : 40*ratio;
+    const iconH = ratio>=1 ? 40/ratio : 40;
+    btn.innerHTML = `
+      ${p.note ? `<div class="preset-note">${p.note}</div>` : ''}
+      <div class="preset-icon" style="width:${iconW}px; height:${iconH}px;"></div>
+      <div class="preset-label">${fmt(p.w)} × ${fmt(p.h)} <small>${p.unit || 'นิ้ว'}</small></div>
+    `;
+    btn.addEventListener('click', () => {
+      state.selectedPreset = idx;
+      render();
+    });
+    grid.appendChild(btn);
+  });
+
+  const customBtn = document.createElement('div');
+  customBtn.className = 'preset-btn custom-toggle' + (state.selectedPreset===-1 ? ' selected':'');
+  customBtn.innerHTML = `
+    <div class="preset-icon"></div>
+    <div class="preset-label">กำหนดเอง...</div>
+  `;
+  customBtn.addEventListener('click', () => {
+    state.selectedPreset = -1;
+    render();
+  });
+  grid.appendChild(customBtn);
+
+  const customFields = card.querySelector('#custom-fields');
+  if (state.selectedPreset === -1){
+    customFields.innerHTML = `
+      <div class="field-row">
+        <div class="field">
+          <label>กว้าง</label>
+          <input type="number" min="0" step="0.1" id="cw" value="${state.customW}" placeholder="เช่น 43">
+        </div>
+        <div class="field">
+          <label>ยาว</label>
+          <input type="number" min="0" step="0.1" id="ch" value="${state.customH}" placeholder="เช่น 31">
+        </div>
+        <div class="field"><span class="unit">นิ้ว</span></div>
+      </div>
+    `;
+    customFields.querySelector('#cw').addEventListener('input', e => state.customW = e.target.value);
+    customFields.querySelector('#ch').addEventListener('input', e => state.customH = e.target.value);
+  }
+
+  card.querySelector('#next1').addEventListener('click', () => {
+    const s = getBigSizeIn();
+    if (!s.w || !s.h || s.w<=0 || s.h<=0){
+      const err = card.querySelector('#err1');
+      err.style.display = 'block';
+      err.textContent = 'กรุณาระบุขนาดกระดาษแผ่นใหญ่ให้ถูกต้อง';
+      return;
+    }
+    state.error = '';
+    state.step = 2;
+    render();
+  });
+}
+
+function renderStep2(app){
+  const sIn = getBigSizeIn();
+  const sCm = { w: toCm(sIn.w, sIn.unit), h: toCm(sIn.h, sIn.unit) };
+  const bigSizeText = sIn.unit === 'ซม.'
+    ? `<b class="mono">${fmt(sIn.w)} × ${fmt(sIn.h)} ซม.</b>`
+    : `<b class="mono">${fmt(sIn.w)} × ${fmt(sIn.h)} นิ้ว</b> (≈ ${fmt(sCm.w)} × ${fmt(sCm.h)} ซม.)`;
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="section-title">ขนาดกระดาษแผ่นเล็ก</div>
+    <div class="section-sub">กระดาษแผ่นใหญ่ที่เลือก: ${bigSizeText} — ใส่ขนาดกระดาษแผ่นเล็กที่ต้องการตัด (หน่วยเป็นเซนติเมตร)</div>
+    <div class="field-row">
+      <div class="field">
+        <label>กว้าง</label>
+        <input type="number" min="0" step="0.1" id="sw" value="${state.smallW}" placeholder="เช่น 25">
+      </div>
+      <div class="field">
+        <label>ยาว</label>
+        <input type="number" min="0" step="0.1" id="sh" value="${state.smallH}" placeholder="เช่น 35.5">
+      </div>
+      <div class="field"><span class="unit">ซม.</span></div>
+    </div>
+    <div class="field-row">
+      <div class="field qty-field">
+        <label>ต้องการกระดาษแผ่นเล็กกี่แผ่น (ไม่บังคับ)</label>
+        <input type="number" min="0" id="qty" value="${state.qty}" placeholder="เช่น 500">
+      </div>
+    </div>
+    <div class="error-msg" id="err2" style="display:none;"></div>
+    <div class="actions" style="margin-top:20px;">
+      <button class="btn btn-ghost" id="back2">← ย้อนกลับ</button>
+      <button class="btn btn-primary" id="next2">คำนวณผลการตัด →</button>
+    </div>
+  `;
+  app.appendChild(card);
+
+  card.querySelector('#sw').addEventListener('input', e => state.smallW = e.target.value);
+  card.querySelector('#sh').addEventListener('input', e => state.smallH = e.target.value);
+  card.querySelector('#qty').addEventListener('input', e => state.qty = e.target.value);
+  card.querySelector('#back2').addEventListener('click', () => { state.step = 1; render(); });
+  card.querySelector('#next2').addEventListener('click', () => {
+    const w = parseFloat(state.smallW), h = parseFloat(state.smallH);
+    if (!w || !h || w<=0 || h<=0){
+      const err = card.querySelector('#err2');
+      err.style.display = 'block';
+      err.textContent = 'กรุณาระบุขนาดกระดาษแผ่นเล็กให้ถูกต้อง';
+      return;
+    }
+    if (w > Math.max(sCm.w,sCm.h) && h > Math.max(sCm.w,sCm.h)){
+      const err = card.querySelector('#err2');
+      err.style.display = 'block';
+      err.textContent = 'กระดาษแผ่นเล็กใหญ่เกินไป ไม่สามารถตัดจากกระดาษแผ่นใหญ่นี้ได้แม้แต่แผ่นเดียว';
+      return;
+    }
+    state.step = 3;
+    render();
+  });
+}
+
+function renderStep3(app){
+  const sIn = getBigSizeIn();
+  const W = toCm(sIn.w, sIn.unit), H = toCm(sIn.h, sIn.unit);
+  const w = parseFloat(state.smallW), h = parseFloat(state.smallH);
+  const best = computeBest(W, H, w, h);
+
+  if (best.total === 0){
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="section-title">ไม่สามารถตัดได้</div>
+      <div class="section-sub">กระดาษแผ่นใหญ่ ${fmt(sIn.w)} × ${fmt(sIn.h)} ${sIn.unit} เล็กเกินไปสำหรับกระดาษแผ่นเล็ก ${fmt(w)} × ${fmt(h)} ซม.</div>
+      <div class="actions" style="margin-top:20px;">
+        <button class="btn btn-ghost" id="back3">← ย้อนกลับ</button>
+        <span></span>
+      </div>
+    `;
+    app.appendChild(card);
+    card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
+    return;
+  }
+
+  const mainInfo = orientLabel(best.mainOrient, w, h);
+  const extraInfo = best.extraCount>0 ? orientLabel(best.extraOrient, w, h) : null;
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const sizeFrame = document.createElement('div');
+  sizeFrame.className = 'size-frame';
+  sizeFrame.innerHTML = `
+    <div class="size-box big">
+      <div class="size-swatch"></div>
+      <div class="size-text">
+        <div class="size-label">กระดาษแผ่นใหญ่</div>
+        <div class="size-value">${fmt(sIn.w)} × ${fmt(sIn.h)} ${sIn.unit}</div>
+        ${sIn.unit !== 'ซม.' ? `<div class="size-sub mono">≈ ${fmt(W)} × ${fmt(H)} ซม.</div>` : ''}
+      </div>
+    </div>
+    <div class="size-arrow">✂</div>
+    <div class="size-box small">
+      <div class="size-swatch" style="width:20px;height:20px;align-self:center;"></div>
+      <div class="size-text">
+        <div class="size-label">กระดาษแผ่นเล็ก</div>
+        <div class="size-value">${fmt(w)} × ${fmt(h)} ซม.</div>
+      </div>
+    </div>
+  `;
+  card.appendChild(sizeFrame);
+
+  const layout = document.createElement('div');
+  layout.className = 'result-layout';
+
+  const leftoverRects = computeLeftoverRects(W, H, best.geo);
+
+  // ---- Diagram column ----
+  const diagramWrap = document.createElement('div');
+  diagramWrap.className = 'diagram-wrap';
+  diagramWrap.innerHTML = `<div class="section-title" style="align-self:flex-start;">แผนผังการตัด</div>`;
+  const svgHolder = document.createElement('div');
+  svgHolder.innerHTML = buildSVG(W, H, best.cells, null, null, leftoverRects);
+  diagramWrap.appendChild(svgHolder);
+
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML = `
+    <div class="legend-item"><span class="swatch" style="background:#2954A3;"></span> ${mainInfo.text} (${fmt(mainInfo.pw)}×${fmt(mainInfo.ph)} ซม.)</div>
+    ${extraInfo ? `<div class="legend-item"><span class="swatch" style="background:#1E8C7D;"></span> ${extraInfo.text} (${fmt(extraInfo.pw)}×${fmt(extraInfo.ph)} ซม.)</div>` : ''}
+    ${leftoverRects.length ? `<div class="legend-item"><span class="swatch" style="background:#C0392B;"></span> เศษกระดาษ</div>` : ''}
+  `;
+  diagramWrap.appendChild(legend);
+  diagramWrap.innerHTML += `<div class="diagram-caption">เส้นประคือแนวตัด · ตัวเลขในแต่ละช่องคือขนาดกระดาษแผ่นเล็ก (ซม.) · สีแดงคือเศษกระดาษ</div>`;
+
+  if (leftoverRects.length){
+    const leftoverList = document.createElement('div');
+    leftoverList.className = 'leftover-list';
+    const allReadings = leftoverRects.flatMap(r => leftoverReadings(r, W, H));
+    leftoverList.innerHTML = allReadings
+      .map(item => `<div class="leftover-item"><span class="leftover-dot"></span>${item.label} เศษ <b>${fmt(item.value)} ซม.</b></div>`)
+      .join('');
+    diagramWrap.appendChild(leftoverList);
+  }
+
+  layout.appendChild(diagramWrap);
+
+  // ---- Stats column ----
+  const statCol = document.createElement('div');
+
+  const statCard = document.createElement('div');
+  statCard.className = 'stat-card';
+  statCard.innerHTML = `
+    <div class="stat-sub">ตัดได้ทั้งหมด</div>
+    <div class="stat-headline">${best.total}<span class="unit">ตัวต่อ 1 แผ่นใหญ่</span></div>
+    <div class="breakdown">
+      <div class="breakdown-row">
+        <div class="label"><span class="swatch" style="background:#2954A3;"></span>${mainInfo.text}</div>
+        <div class="value">${best.mainCount} ตัว</div>
+      </div>
+      ${extraInfo ? `
+      <div class="breakdown-row">
+        <div class="label"><span class="swatch" style="background:#1E8C7D;"></span>${extraInfo.text}</div>
+        <div class="value">${best.extraCount} ตัว</div>
+      </div>` : ''}
+    </div>
+  `;
+  statCol.appendChild(statCard);
+
+  if (state.qty && parseFloat(state.qty) > 0){
+    const qty = parseFloat(state.qty);
+    const sheetsNeeded = Math.ceil(qty / best.total);
+    const leftover = sheetsNeeded*best.total - qty;
+    const qtyBox = document.createElement('div');
+    qtyBox.className = 'qty-box';
+    qtyBox.innerHTML = `
+      <div class="qty-primary">
+        <div class="qty-label">ต้องใช้กระดาษแผ่นใหญ่</div>
+        <div class="headline">${sheetsNeeded}<span class="unit">แผ่น</span></div>
+      </div>
+      <div class="qty-secondary">
+        <div class="qty-label">แผ่นเล็กที่ต้องการทั้งหมด</div>
+        <div class="headline-big">${qty}<span class="unit">แผ่น</span></div>
+      </div>
+      <div class="sub">${qty} (ที่ต้องการ) ÷ ${best.total} (ตัดได้ต่อแผ่น) = ${sheetsNeeded} แผ่นใหญ่ ${leftover>0 ? `(ได้ส่วนเกิน ${leftover} แผ่นเล็ก)` : '(พอดี ไม่มีเหลือ)'}</div>
+    `;
+    statCard.appendChild(qtyBox);
+  }
+
+  layout.appendChild(statCol);
+  card.appendChild(layout);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.style.marginTop = '20px';
+  actions.innerHTML = `
+    <button class="btn btn-ghost" id="back3">← แก้ไขขนาดกระดาษเล็ก</button>
+    <button class="btn btn-ghost" id="restart3">เริ่มใหม่</button>
+  `;
+  card.appendChild(actions);
+
+  app.appendChild(card);
+
+  card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
+  card.querySelector('#restart3').addEventListener('click', () => {
+    state = { mode:null, step:1, selectedPreset:0, customW:'', customH:'', smallW:'', smallH:'', qty:'', error:'' };
+    render();
+  });
+}
+
+function buildSVG(W, H, cells, watermark, watermarkColor, leftoverRects){
+  const maxW = 520, maxH = 420;
+  const margin = 30;
+  const scale = Math.min((maxW-margin)/W, (maxH-margin)/H);
+  const plotW = W*scale, plotH = H*scale;
+  const totalW = plotW + margin;
+  const totalH = plotH + margin;
+
+  let ticksTop = '', ticksLeft = '';
+  for(let x=0; x<=W; x += (W>60?10:5)){
+    const px = margin + x*scale;
+    ticksTop += `<line x1="${px}" y1="${margin-6}" x2="${px}" y2="${margin}" stroke="#5B5F6A" stroke-width="1"/>`;
+    ticksTop += `<text x="${px}" y="${margin-10}" font-size="9" font-family="IBM Plex Mono, monospace" fill="#5B5F6A" text-anchor="middle">${x}</text>`;
+  }
+  for(let y=0; y<=H; y += (H>60?10:5)){
+    const py = margin + y*scale;
+    ticksLeft += `<line x1="${margin-6}" y1="${py}" x2="${margin}" y2="${py}" stroke="#5B5F6A" stroke-width="1"/>`;
+    ticksLeft += `<text x="${margin-9}" y="${py+3}" font-size="9" font-family="IBM Plex Mono, monospace" fill="#5B5F6A" text-anchor="end">${y}</text>`;
+  }
+
+  let watermarkSvg = '';
+  if (watermark){
+    const wmSize = Math.min(plotW, plotH) * 0.22;
+    watermarkSvg = `<text x="${margin+plotW/2}" y="${margin+plotH/2}" font-size="${wmSize}" font-family="IBM Plex Sans Thai, sans-serif" font-weight="700" fill="${watermarkColor||'#24262B'}" fill-opacity="0.14" text-anchor="middle" dominant-baseline="middle">${watermark}</text>`;
+  }
+
+  let leftoverSvg = '';
+  (leftoverRects || []).forEach(r => {
+    const inset = 1.5;
+    const rawX = margin + r.x*scale;
+    const rawY = margin + r.y*scale;
+    const rawW = r.w*scale;
+    const rawH = r.h*scale;
+    const x = rawX + inset;
+    const y = rawY + inset;
+    const w = Math.max(0, rawW - inset*2);
+    const h = Math.max(0, rawH - inset*2);
+    if (w<=0 || h<=0) return;
+    leftoverSvg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#F5B7B1" stroke="#922B21" stroke-width="1.5"/>`;
+
+    const readings = leftoverReadings(r, W, H);
+    const cx = x+w/2, cy = y+h/2;
+    if (readings.length === 1){
+      const isTallNarrow = h > w*1.8;
+      if (isTallNarrow && h>26){
+        const fs = Math.max(8, Math.min(11, w/1.4));
+        leftoverSvg += `<text x="${cx}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${cx} ${cy})">${fmt(readings[0].value)} cm</text>`;
+      } else if (w>26 && h>14){
+        const fs = Math.max(8, Math.min(11, Math.min(w,h)/3));
+        leftoverSvg += `<text x="${cx}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="middle">${fmt(readings[0].value)} cm</text>`;
+      }
+    } else if (readings.length === 2 && w>30 && h>20){
+      const fs = Math.max(7, Math.min(10, Math.min(w,h)/4));
+      const pad = 5;
+      const vReading = readings.find(rd => rd.axis === 'v');
+      const hReading = readings.find(rd => rd.axis === 'h');
+      if (vReading) leftoverSvg += `<text x="${x+pad}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="start" dominant-baseline="middle">${fmt(vReading.value)} cm</text>`;
+      if (hReading) leftoverSvg += `<text x="${cx}" y="${y+h-pad}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="text-after-edge">${fmt(hReading.value)} cm</text>`;
+    }
+  });
+
+  let pieces = '';
+  cells.forEach((c, idx) => {
+    const x = margin + c.x*scale;
+    const y = margin + c.y*scale;
+    const w = c.w*scale;
+    const h = c.h*scale;
+    const color = c.orient === 'A' ? '#2954A3' : '#1E8C7D';
+    const fill = c.orient === 'A' ? '#EAF0FB' : '#E8F5F2';
+    pieces += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" stroke="${color}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    // crop marks at corners
+    const m = 6;
+    [[x,y,-1,-1],[x+w,y,1,-1],[x,y+h,-1,1],[x+w,y+h,1,1]].forEach(([cx,cy,dx,dy]) => {
+      pieces += `<line x1="${cx}" y1="${cy}" x2="${cx+dx*m}" y2="${cy}" stroke="${color}" stroke-width="1"/>`;
+      pieces += `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy+dy*m}" stroke="${color}" stroke-width="1"/>`;
+    });
+    if (w>20 && h>20){
+      const fontSize = Math.max(7, Math.min(11, Math.min(w,h)/5));
+      const pad = 5;
+      pieces += `<text x="${x+pad}" y="${y+h/2}" font-size="${fontSize}" font-family="IBM Plex Mono, monospace" fill="${color}" text-anchor="start" dominant-baseline="middle">${fmt(c.h)} cm</text>`;
+      pieces += `<text x="${x+w/2}" y="${y+h-pad}" font-size="${fontSize}" font-family="IBM Plex Mono, monospace" fill="${color}" text-anchor="middle" dominant-baseline="text-after-edge">${fmt(c.w)} cm</text>`;
+    }
+  });
+
+  return `
+    <svg width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="${margin}" y="${margin}" width="${plotW}" height="${plotH}" fill="#FFFFFF" stroke="#24262B" stroke-width="2"/>
+      ${ticksTop}
+      ${ticksLeft}
+      ${watermarkSvg}
+      ${leftoverSvg}
+      ${pieces}
+    </svg>
+  `;
+}
+
+render();
+</script>
+</body>
+</html>
