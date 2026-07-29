@@ -622,29 +622,35 @@ function computeLeftoverRects(W, H, geo){
   return rects;
 }
 
-function leftoverReadings(r, W, H){
-  // Returns an array of {label, value} — always a single number per reading,
-  // never a combined W×H. Strip rects (spanning the full width or height)
-  // yield one reading; corner rects yield two (one per direction).
-  const touchesRight = Math.abs((r.x + r.w) - W) < 0.05;
-  const touchesBottom = Math.abs((r.y + r.h) - H) < 0.05;
-  const touchesLeft = Math.abs(r.x) < 0.05;
-  const touchesTop = Math.abs(r.y) < 0.05;
-  const fullWidth = touchesLeft && touchesRight;
-  const fullHeight = touchesTop && touchesBottom;
+function leftoverRectLabel(r, W, H){
+  // One clear positional name for a leftover rectangle, based on where its
+  // center sits within the sheet.
+  const cx = r.x + r.w/2;
+  const cy = r.y + r.h/2;
+  const leftBand = cx < W/3;
+  const rightBand = cx > W*2/3;
+  const topBand = cy < H/3;
+  const bottomBand = cy > H*2/3;
 
-  const readings = [];
-  if (fullWidth){
-    readings.push({ label: touchesBottom ? 'มุมล่าง' : 'มุมบน', value: r.h, axis: 'v' });
-  } else if (fullHeight){
-    readings.push({ label: touchesRight ? 'มุมขวา' : 'มุมซ้าย', value: r.w, axis: 'h' });
-  } else {
-    if (touchesBottom) readings.push({ label: 'มุมล่าง', value: r.h, axis: 'v' });
-    else if (touchesTop) readings.push({ label: 'มุมบน', value: r.h, axis: 'v' });
-    if (touchesRight) readings.push({ label: 'มุมขวา', value: r.w, axis: 'h' });
-    else if (touchesLeft) readings.push({ label: 'มุมซ้าย', value: r.w, axis: 'h' });
-  }
-  return readings;
+  if (bottomBand && leftBand) return 'มุมล่างซ้าย';
+  if (bottomBand && rightBand) return 'มุมล่างขวา';
+  if (topBand && leftBand) return 'มุมบนซ้าย';
+  if (topBand && rightBand) return 'มุมบนขวา';
+  if (bottomBand) return 'ด้านล่าง';
+  if (topBand) return 'ด้านบน';
+  if (rightBand) return 'ด้านขวา';
+  if (leftBand) return 'ด้านซ้าย';
+  return 'ตรงกลาง';
+}
+
+function isNegligibleScrap(r){
+  // Ignore slivers under 0.5 cm on either side (rounding/kerf noise, not usable scrap).
+  return r.w < 0.5 || r.h < 0.5;
+}
+
+function leftoverRectText(r){
+  const fmtV = v => fmt(Math.round(v*10)/10);
+  return `${fmtV(r.w)} × ${fmtV(r.h)} ซม.`;
 }
 
 
@@ -956,22 +962,23 @@ function renderStep3(app){
   svgHolder.innerHTML = buildSVG(W, H, best.cells, null, null, leftoverRects);
   diagramWrap.appendChild(svgHolder);
 
+  const realLeftovers = leftoverRects.filter(r => !isNegligibleScrap(r));
+
   const legend = document.createElement('div');
   legend.className = 'legend';
   legend.innerHTML = `
     <div class="legend-item"><span class="swatch" style="background:#2954A3;"></span> ${mainInfo.text} (${fmt(mainInfo.pw)}×${fmt(mainInfo.ph)} ซม.)</div>
     ${extraInfo ? `<div class="legend-item"><span class="swatch" style="background:#1E8C7D;"></span> ${extraInfo.text} (${fmt(extraInfo.pw)}×${fmt(extraInfo.ph)} ซม.)</div>` : ''}
-    ${leftoverRects.length ? `<div class="legend-item"><span class="swatch" style="background:#C0392B;"></span> เศษกระดาษ</div>` : ''}
+    ${realLeftovers.length ? `<div class="legend-item"><span class="swatch" style="background:#C0392B;"></span> เศษกระดาษ</div>` : ''}
   `;
   diagramWrap.appendChild(legend);
-  diagramWrap.innerHTML += `<div class="diagram-caption">เส้นประคือแนวตัด · ตัวเลขในแต่ละช่องคือขนาดกระดาษแผ่นเล็ก (ซม.) · สีแดงคือเศษกระดาษ</div>`;
+  diagramWrap.innerHTML += `<div class="diagram-caption">เส้นประคือแนวตัด · ตัวเลขในแต่ละช่องคือขนาดกระดาษแผ่นเล็ก (ซม.)${realLeftovers.length ? ' · สีแดงคือเศษกระดาษ' : ''}</div>`;
 
-  if (leftoverRects.length){
+  if (realLeftovers.length){
     const leftoverList = document.createElement('div');
     leftoverList.className = 'leftover-list';
-    const allReadings = leftoverRects.flatMap(r => leftoverReadings(r, W, H));
-    leftoverList.innerHTML = allReadings
-      .map(item => `<div class="leftover-item"><span class="leftover-dot"></span>${item.label} เศษ <b>${fmt(item.value)} ซม.</b></div>`)
+    leftoverList.innerHTML = realLeftovers
+      .map(r => `<div class="leftover-item"><span class="leftover-dot"></span>${leftoverRectLabel(r, W, H)} เศษ <b>${leftoverRectText(r)}</b></div>`)
       .join('');
     diagramWrap.appendChild(leftoverList);
   }
@@ -1069,6 +1076,8 @@ function buildSVG(W, H, cells, watermark, watermarkColor, leftoverRects){
 
   let leftoverSvg = '';
   (leftoverRects || []).forEach(r => {
+    if (isNegligibleScrap(r)) return;
+    const rnd = v => fmt(Math.round(v*10)/10);
     const inset = 1.5;
     const rawX = margin + r.x*scale;
     const rawY = margin + r.y*scale;
@@ -1081,24 +1090,16 @@ function buildSVG(W, H, cells, watermark, watermarkColor, leftoverRects){
     if (w<=0 || h<=0) return;
     leftoverSvg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#F5B7B1" stroke="#922B21" stroke-width="1.5"/>`;
 
-    const readings = leftoverReadings(r, W, H);
-    const cx = x+w/2, cy = y+h/2;
-    if (readings.length === 1){
-      const isTallNarrow = h > w*1.8;
-      if (isTallNarrow && h>26){
-        const fs = Math.max(8, Math.min(11, w/1.4));
-        leftoverSvg += `<text x="${cx}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${cx} ${cy})">${fmt(readings[0].value)} cm</text>`;
-      } else if (w>26 && h>14){
-        const fs = Math.max(8, Math.min(11, Math.min(w,h)/3));
-        leftoverSvg += `<text x="${cx}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="middle">${fmt(readings[0].value)} cm</text>`;
-      }
-    } else if (readings.length === 2 && w>30 && h>20){
-      const fs = Math.max(7, Math.min(10, Math.min(w,h)/4));
-      const pad = 5;
-      const vReading = readings.find(rd => rd.axis === 'v');
-      const hReading = readings.find(rd => rd.axis === 'h');
-      if (vReading) leftoverSvg += `<text x="${x+pad}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="start" dominant-baseline="middle">${fmt(vReading.value)} cm</text>`;
-      if (hReading) leftoverSvg += `<text x="${cx}" y="${y+h-pad}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="text-after-edge">${fmt(hReading.value)} cm</text>`;
+    const pad = 5;
+    if (w>26 && h>14){
+      const fs = Math.max(7, Math.min(10, Math.min(w,h)/3.2));
+      leftoverSvg += `<text x="${x+pad}" y="${y+h/2}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="start" dominant-baseline="middle">${rnd(r.h)} cm</text>`;
+      leftoverSvg += `<text x="${x+w/2}" y="${y+h-pad}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="text-after-edge">${rnd(r.w)} cm</text>`;
+    } else if (h > w*1.8 && h>26){
+      // narrow tall strip — rotate the single dimension that fits
+      const fs = Math.max(8, Math.min(11, w/1.4));
+      const cx = x+w/2, cy = y+h/2;
+      leftoverSvg += `<text x="${cx}" y="${cy}" font-size="${fs}" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#5C1A14" text-anchor="middle" dominant-baseline="middle" transform="rotate(-90 ${cx} ${cy})">${rnd(r.w)} cm</text>`;
     }
   });
 
