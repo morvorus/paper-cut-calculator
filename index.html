@@ -1060,6 +1060,7 @@ function renderStep3(app){
 
   if (state.qty && parseFloat(state.qty) > 0){
     const qty = parseFloat(state.qty);
+    const displayQty = accessGranted ? qty : 0;
     const sheetsNeeded = accessGranted && best.total > 0 ? Math.ceil(qty / best.total) : 0;
     const leftover = accessGranted ? sheetsNeeded*best.total - qty : 0;
     const qtyBox = document.createElement('div');
@@ -1071,7 +1072,7 @@ function renderStep3(app){
       </div>
       <div class="qty-secondary">
         <div class="qty-label">แผ่นเล็กที่ต้องการทั้งหมด</div>
-        <div class="headline-big">${qty}<span class="unit">แผ่น</span></div>
+        <div class="headline-big">${displayQty}<span class="unit">แผ่น</span></div>
       </div>
       <div class="sub">${accessGranted
         ? `${qty} (ที่ต้องการ) ÷ ${best.total} (ตัดได้ต่อแผ่น) = ${sheetsNeeded} แผ่นใหญ่ ${leftover>0 ? `(ได้ส่วนเกิน ${leftover} แผ่นเล็ก)` : '(พอดี ไม่มีเหลือ)'}`
