@@ -228,7 +228,6 @@ html,body{
 .access-code-wrap .field-row{ margin-top:0; }
 .access-code-wrap input{
   width: 150px;
-  text-transform: uppercase;
 }
 .access-help{
   color: var(--ink-soft);
@@ -546,7 +545,7 @@ let state = {
 };
 
 function hasValidAccessCode(){
-  return state.accessCode.trim().toUpperCase() === 'L';
+  return state.accessCode.trim().toLowerCase() === 'jan';
 }
 
 function fmt(n){
@@ -804,7 +803,6 @@ function renderStep1(app){
           <input type="password" id="access-code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="กรอกรหัส">
         </div>
       </div>
-      <div class="access-help">กรอกรหัสก่อนกดถัดไป หากรหัสไม่ถูกต้อง ผลคำนวณทั้งหมดจะแสดงเป็น 0</div>
     </div>
     <div class="error-msg" id="err1" style="display:none;"></div>
     <div class="actions" style="margin-top:20px;">
@@ -817,8 +815,7 @@ function renderStep1(app){
   const accessCodeInput = card.querySelector('#access-code');
   accessCodeInput.value = state.accessCode;
   accessCodeInput.addEventListener('input', e => {
-    state.accessCode = e.target.value.toUpperCase();
-    e.target.value = state.accessCode;
+    state.accessCode = e.target.value;
   });
 
   card.querySelector('#switch-mode').addEventListener('click', () => { state.mode = null; render(); });
