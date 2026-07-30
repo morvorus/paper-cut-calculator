@@ -546,7 +546,7 @@ let state = {
 };
 
 function hasValidAccessCode(){
-  return state.accessCode.trim() === 'L';
+  return state.accessCode.trim().toUpperCase() === 'L';
 }
 
 function fmt(n){
@@ -817,7 +817,8 @@ function renderStep1(app){
   const accessCodeInput = card.querySelector('#access-code');
   accessCodeInput.value = state.accessCode;
   accessCodeInput.addEventListener('input', e => {
-    state.accessCode = e.target.value;
+    state.accessCode = e.target.value.toUpperCase();
+    e.target.value = state.accessCode;
   });
 
   card.querySelector('#switch-mode').addEventListener('click', () => { state.mode = null; render(); });
@@ -1088,14 +1089,17 @@ function renderStep3(app){
   actions.className = 'actions';
   actions.style.marginTop = '20px';
   actions.innerHTML = `
-    <button class="btn btn-ghost" id="back3">← แก้ไขขนาดกระดาษเล็ก</button>
+    <button class="btn btn-ghost" id="back3">${accessGranted ? '← แก้ไขขนาดกระดาษเล็ก' : '← ใส่รหัสใหม่'}</button>
     <button class="btn btn-ghost" id="restart3">เริ่มใหม่</button>
   `;
   card.appendChild(actions);
 
   app.appendChild(card);
 
-  card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
+  card.querySelector('#back3').addEventListener('click', () => {
+    state.step = accessGranted ? 2 : 1;
+    render();
+  });
   card.querySelector('#restart3').addEventListener('click', () => {
     state = { mode:null, step:1, selectedPreset:0, customW:'', customH:'', smallW:'', smallH:'', qty:'', accessCode:'', error:'' };
     render();
