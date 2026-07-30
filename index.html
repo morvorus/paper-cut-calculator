@@ -218,6 +218,32 @@ html,body{
 }
 .field input:focus{ outline:2px solid var(--blue); outline-offset:1px; background: var(--paper); }
 .field .unit{ color: var(--ink-soft); font-size:12px; }
+.access-code-wrap{
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #F4F2E9;
+}
+.access-code-wrap .field-row{ margin-top:0; }
+.access-code-wrap input{
+  width: 150px;
+  text-transform: uppercase;
+}
+.access-help{
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-top: 8px;
+}
+.access-warning{
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #D8A08B;
+  border-radius: 4px;
+  background: #FFF1EB;
+  color: #8B341D;
+  font-size: 13px;
+}
 .field .fixed-value{
   font-size: 15px;
   padding: 9px 10px;
@@ -515,8 +541,13 @@ let state = {
   customW: '', customH: '',
   smallW: '', smallH: '',
   qty: '',
+  accessCode: '',
   error: ''
 };
+
+function hasValidAccessCode(){
+  return state.accessCode.trim() === 'L';
+}
 
 function fmt(n){
   if (Number.isInteger(n)) return n.toString();
@@ -766,6 +797,15 @@ function renderStep1(app){
     <div class="section-sub">เลือกจากขนาดที่ใช้บ่อย หรือกำหนดขนาดเอง (หน่วยเป็นนิ้ว เว้นแต่ระบุเป็น ซม.)</div>
     <div class="preset-grid" id="preset-grid"></div>
     <div id="custom-fields"></div>
+    <div class="access-code-wrap">
+      <div class="field-row">
+        <div class="field">
+          <label for="access-code">รหัสสำหรับคำนวณ</label>
+          <input type="password" id="access-code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="กรอกรหัส">
+        </div>
+      </div>
+      <div class="access-help">กรอกรหัสก่อนกดถัดไป หากรหัสไม่ถูกต้อง ผลคำนวณทั้งหมดจะแสดงเป็น 0</div>
+    </div>
     <div class="error-msg" id="err1" style="display:none;"></div>
     <div class="actions" style="margin-top:20px;">
       <button class="btn btn-ghost" id="switch-mode">← กลับไปเลือกเครื่อง</button>
@@ -773,6 +813,12 @@ function renderStep1(app){
     </div>
   `;
   app.appendChild(card);
+
+  const accessCodeInput = card.querySelector('#access-code');
+  accessCodeInput.value = state.accessCode;
+  accessCodeInput.addEventListener('input', e => {
+    state.accessCode = e.target.value;
+  });
 
   card.querySelector('#switch-mode').addEventListener('click', () => { state.mode = null; render(); });
 
@@ -903,9 +949,13 @@ function renderStep3(app){
   const sIn = getBigSizeIn();
   const W = toCm(sIn.w, sIn.unit), H = toCm(sIn.h, sIn.unit);
   const w = parseFloat(state.smallW), h = parseFloat(state.smallH);
-  const best = computeBest(W, H, w, h);
+  const accessGranted = hasValidAccessCode();
+  const calculatedBest = computeBest(W, H, w, h);
+  const best = accessGranted
+    ? calculatedBest
+    : { ...calculatedBest, total:0, mainCount:0, extraCount:0, cells:[] };
 
-  if (best.total === 0){
+  if (accessGranted && best.total === 0){
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
@@ -952,7 +1002,7 @@ function renderStep3(app){
   const layout = document.createElement('div');
   layout.className = 'result-layout';
 
-  const leftoverRects = computeLeftoverRects(W, H, best.geo);
+  const leftoverRects = accessGranted ? computeLeftoverRects(W, H, best.geo) : [];
 
   // ---- Diagram column ----
   const diagramWrap = document.createElement('div');
@@ -991,6 +1041,7 @@ function renderStep3(app){
   const statCard = document.createElement('div');
   statCard.className = 'stat-card';
   statCard.innerHTML = `
+    ${accessGranted ? '' : '<div class="access-warning">รหัสไม่ถูกต้อง ระบบจึงปิดผลการคำนวณและแสดงค่าเป็น 0</div>'}
     <div class="stat-sub">ตัดได้ทั้งหมด</div>
     <div class="stat-headline">${best.total}<span class="unit">ตัวต่อ 1 แผ่นใหญ่</span></div>
     <div class="breakdown">
@@ -1009,8 +1060,8 @@ function renderStep3(app){
 
   if (state.qty && parseFloat(state.qty) > 0){
     const qty = parseFloat(state.qty);
-    const sheetsNeeded = Math.ceil(qty / best.total);
-    const leftover = sheetsNeeded*best.total - qty;
+    const sheetsNeeded = accessGranted && best.total > 0 ? Math.ceil(qty / best.total) : 0;
+    const leftover = accessGranted ? sheetsNeeded*best.total - qty : 0;
     const qtyBox = document.createElement('div');
     qtyBox.className = 'qty-box';
     qtyBox.innerHTML = `
@@ -1022,7 +1073,9 @@ function renderStep3(app){
         <div class="qty-label">แผ่นเล็กที่ต้องการทั้งหมด</div>
         <div class="headline-big">${qty}<span class="unit">แผ่น</span></div>
       </div>
-      <div class="sub">${qty} (ที่ต้องการ) ÷ ${best.total} (ตัดได้ต่อแผ่น) = ${sheetsNeeded} แผ่นใหญ่ ${leftover>0 ? `(ได้ส่วนเกิน ${leftover} แผ่นเล็ก)` : '(พอดี ไม่มีเหลือ)'}</div>
+      <div class="sub">${accessGranted
+        ? `${qty} (ที่ต้องการ) ÷ ${best.total} (ตัดได้ต่อแผ่น) = ${sheetsNeeded} แผ่นใหญ่ ${leftover>0 ? `(ได้ส่วนเกิน ${leftover} แผ่นเล็ก)` : '(พอดี ไม่มีเหลือ)'}`
+        : '0 (ที่ต้องการ) ÷ 0 (ตัดได้ต่อแผ่น) = 0 แผ่นใหญ่'}</div>
     `;
     statCard.appendChild(qtyBox);
   }
@@ -1043,7 +1096,7 @@ function renderStep3(app){
 
   card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
   card.querySelector('#restart3').addEventListener('click', () => {
-    state = { mode:null, step:1, selectedPreset:0, customW:'', customH:'', smallW:'', smallH:'', qty:'', error:'' };
+    state = { mode:null, step:1, selectedPreset:0, customW:'', customH:'', smallW:'', smallH:'', qty:'', accessCode:'', error:'' };
     render();
   });
 }
