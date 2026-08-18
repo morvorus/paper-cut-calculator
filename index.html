@@ -154,8 +154,18 @@ html,body{
   display:flex;
   flex-direction:column;
   gap:8px;
+  width:100%;
+  font:inherit;
+  color:inherit;
+  text-align:center;
 }
 .preset-btn:hover{ border-color: var(--blue); transform: translateY(-1px); }
+.preset-btn:focus-visible,
+.mode-btn:focus-visible,
+.unit-opt:focus-visible{
+  outline:3px solid rgba(41,84,163,.35);
+  outline-offset:2px;
+}
 .preset-btn.selected{
   border-color: var(--blue);
   background: #EAF0FB;
@@ -241,6 +251,24 @@ html,body{
   color: #fff;
 }
 .unit-toggle .unit-opt:not(.active):hover{ background: #EAF0FB; color: var(--blue-deep); }
+.access-code-wrap{
+  margin-top:18px;
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:#F4F2E9;
+}
+.access-code-wrap .field-row{ margin-top:0; }
+.access-code-wrap input{ width:170px; }
+.result-warning{
+  margin-top:12px;
+  padding:10px 12px;
+  border:1px solid #D79A28;
+  border-radius:var(--radius);
+  background:#FFF5D6;
+  color:#684A0A;
+  font-size:13px;
+}
 .field .fixed-value{
   font-size: 15px;
   padding: 9px 10px;
@@ -469,6 +497,10 @@ html,body{
   padding: 22px 18px;
   cursor:pointer;
   transition: border-color .15s, background .15s, transform .1s;
+  width:100%;
+  font:inherit;
+  color:inherit;
+  text-align:left;
 }
 .mode-btn:hover{ border-color: var(--blue); transform: translateY(-1px); background: #EAF0FB; }
 .mode-btn-title{
@@ -531,6 +563,17 @@ const MODES = {
   }
 };
 
+const ACCESS_CODE = 'jan';
+const UNIT_SCALE = 10; // calculate in 0.1 cm units to avoid floating-point undercounts
+const MIN_PIECE_CM = 0.1;
+const MAX_SHEET_CM = 500;
+const MAX_QTY = 10000000;
+const MAX_DP_STATES = 50000;
+const MAX_DP_MS = 600;
+const MAX_RENDER_CELLS = 2000;
+const MAX_MATERIALIZED_REGIONS = 5000;
+const MAX_RENDER_SCRAPS = 500;
+
 let state = {
   mode: null,
   step: 1,
@@ -539,6 +582,7 @@ let state = {
   customUnit: 'นิ้ว',
   smallW: '', smallH: '',
   qty: '',
+  accessCode: '',
   error: ''
 };
 
@@ -555,6 +599,44 @@ function toCm(v, unit){
   return unit === 'ซม.' ? v : inToCm(v);
 }
 
+function parseFiniteNumber(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function roundNumber(value, digits = 2){
+  const factor = 10 ** digits;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+function convertUnitInput(value, fromUnit, toUnit){
+  if (value === '' || fromUnit === toUnit) return value;
+  const n = parseFiniteNumber(value);
+  if (!Number.isFinite(n)) return '';
+  return String(roundNumber(fromUnit === 'นิ้ว' ? n * 2.54 : n / 2.54));
+}
+
+function hasValidAccessCode(){
+  return state.accessCode.trim().toLowerCase() === ACCESS_CODE;
+}
+
+function toUnits(cm){
+  return Math.round(cm * UNIT_SCALE);
+}
+
+function fromUnits(units){
+  return units / UNIT_SCALE;
+}
+
+function escapeAttr(value){
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 function getBigSizeIn(){
   if (state.selectedPreset === -1){
     return { w: parseFloat(state.customW), h: parseFloat(state.customH), unit: state.customUnit };
@@ -563,87 +645,198 @@ function getBigSizeIn(){
   return { w: p.w, h: p.h, unit: p.unit || 'นิ้ว', note: p.note };
 }
 
-function buildGrid(nx, ny, offX, offY, pw, ph, orient){
-  const cells = [];
-  for(let j=0;j<ny;j++){
-    for(let i=0;i<nx;i++){
-      cells.push({ x: offX + i*pw, y: offY + j*ph, w: pw, h: ph, orient });
-    }
-  }
-  return cells;
-}
-
 function computeBest(W,H,w,h){
-  const strategies = [];
-
-  function push(mainPw, mainPh, mainOrient, splitDir){
-    const nx = Math.floor(W/mainPw);
-    const ny = Math.floor(H/mainPh);
-    const mainCells = buildGrid(nx, ny, 0, 0, mainPw, mainPh, mainOrient);
-    const otherPw = mainPh, otherPh = mainPw;
-    const otherOrient = mainOrient === 'A' ? 'B' : 'A';
-    let extraCells = [];
-    let exCount = 0;
-    let geo;
-    if (splitDir === 'col'){
-      const usedW = nx*mainPw;
-      const remW = W - usedW;
-      const exW = Math.floor(remW/otherPw);
-      const exH = Math.floor(H/otherPh);
-      extraCells = buildGrid(exW, exH, usedW, 0, otherPw, otherPh, otherOrient);
-      exCount = exW*exH;
-      geo = { mainW: nx*mainPw, mainH: ny*mainPh, extraX: usedW, extraY: 0, extraW: exW*otherPw, extraH: exH*otherPh, splitDir };
-    } else {
-      const usedH = ny*mainPh;
-      const remH = H - usedH;
-      const exH2 = Math.floor(remH/otherPh);
-      const exW2 = Math.floor(W/otherPw);
-      extraCells = buildGrid(exW2, exH2, 0, usedH, otherPw, otherPh, otherOrient);
-      exCount = exW2*exH2;
-      geo = { mainW: nx*mainPw, mainH: ny*mainPh, extraX: 0, extraY: usedH, extraW: exW2*otherPw, extraH: exH2*otherPh, splitDir };
-    }
-    strategies.push({
-      cells: mainCells.concat(extraCells),
-      mainCount: nx*ny,
-      mainOrient,
-      extraCount: exCount,
-      extraOrient: otherOrient,
-      total: nx*ny + exCount,
-      geo
-    });
+  const sheetW = toUnits(W), sheetH = toUnits(H);
+  const pieceW = toUnits(w), pieceH = toUnits(h);
+  if (sheetW <= 0 || sheetH <= 0 || pieceW <= 0 || pieceH <= 0){
+    return { total:0, aCount:0, bCount:0, cells:[], leftovers:[], exact:true, renderLimited:false };
   }
 
-  push(w, h, 'A', 'col');
-  push(w, h, 'A', 'row');
-  push(h, w, 'B', 'col');
-  push(h, w, 'B', 'row');
+  const memo = new Map();
+  const cutMemo = new Map();
+  const startedAt = Date.now();
+  let statesVisited = 0;
+  let budgetExceeded = false;
 
-  let best = strategies[0];
-  for(const s of strategies){ if (s.total > best.total) best = s; }
-  return best;
+  function gridResult(rectW, rectH, orient){
+    const pw = orient === 'A' ? pieceW : pieceH;
+    const ph = orient === 'A' ? pieceH : pieceW;
+    const nx = Math.floor(rectW / pw);
+    const ny = Math.floor(rectH / ph);
+    const count = nx * ny;
+    return {
+      count,
+      aCount: orient === 'A' ? count : 0,
+      bCount: orient === 'B' ? count : 0,
+      cuts: 0,
+      exact: true,
+      plan: { type:'grid', orient, pw, ph, nx, ny }
+    };
+  }
+
+  function prefer(a, b){
+    if (b.count !== a.count) return b.count > a.count ? b : a;
+    if (b.cuts !== a.cuts) return b.cuts < a.cuts ? b : a;
+    return b.aCount >= a.aCount ? b : a;
+  }
+
+  function cutPositions(size){
+    if (cutMemo.has(size)) return cutMemo.get(size);
+    const positions = new Set();
+    for (const step of [pieceW, pieceH]){
+      for (let cut = step; cut < size; cut += step) positions.add(cut);
+    }
+    const result = Array.from(positions)
+      .sort((a,b) => Math.abs(a-size/2) - Math.abs(b-size/2));
+    cutMemo.set(size, result);
+    return result;
+  }
+
+  function solve(rectW, rectH){
+    const key = `${rectW}x${rectH}`;
+    if (memo.has(key)) return memo.get(key);
+
+    statesVisited += 1;
+    let best = prefer(gridResult(rectW, rectH, 'A'), gridResult(rectW, rectH, 'B'));
+    const upperBound = Math.floor((rectW * rectH) / (pieceW * pieceH));
+    if (best.count === upperBound){
+      memo.set(key, best);
+      return best;
+    }
+
+    if (statesVisited > MAX_DP_STATES || Date.now() - startedAt > MAX_DP_MS){
+      budgetExceeded = true;
+      best.exact = false;
+      memo.set(key, best);
+      return best;
+    }
+
+    const budgetBefore = budgetExceeded;
+    for (const cut of cutPositions(rectW)){
+      const left = solve(cut, rectH);
+      const right = solve(rectW-cut, rectH);
+      const candidate = {
+        count: left.count + right.count,
+        aCount: left.aCount + right.aCount,
+        bCount: left.bCount + right.bCount,
+        cuts: left.cuts + right.cuts + 1,
+        exact: left.exact && right.exact,
+        plan: { type:'splitV', cut, first:left.plan, second:right.plan }
+      };
+      best = prefer(best, candidate);
+      if (best.count === upperBound) break;
+    }
+
+    if (best.count < upperBound){
+      for (const cut of cutPositions(rectH)){
+        const top = solve(rectW, cut);
+        const bottom = solve(rectW, rectH-cut);
+        const candidate = {
+          count: top.count + bottom.count,
+          aCount: top.aCount + bottom.aCount,
+          bCount: top.bCount + bottom.bCount,
+          cuts: top.cuts + bottom.cuts + 1,
+          exact: top.exact && bottom.exact,
+          plan: { type:'splitH', cut, first:top.plan, second:bottom.plan }
+        };
+        best = prefer(best, candidate);
+        if (best.count === upperBound) break;
+      }
+    }
+
+    best.exact = best.count === upperBound || (best.exact && budgetExceeded === budgetBefore);
+    memo.set(key, best);
+    return best;
+  }
+
+  const solved = solve(sheetW, sheetH);
+  const cells = [];
+  const leftovers = [];
+  const renderLimited = solved.count > MAX_RENDER_CELLS;
+  let regionsVisited = 0;
+  let leftoversLimited = false;
+  const pushLeftover = (x,y,rw,rh) => {
+    if (rw > 0 && rh > 0){
+      if (leftovers.length < MAX_MATERIALIZED_REGIONS) leftovers.push({x,y,w:rw,h:rh});
+      else leftoversLimited = true;
+    }
+  };
+
+  function materialize(plan, x, y, rectW, rectH){
+    if (!plan) return;
+    regionsVisited += 1;
+    if (regionsVisited > MAX_MATERIALIZED_REGIONS){
+      leftoversLimited = true;
+      return;
+    }
+    if (plan.type === 'splitV'){
+      materialize(plan.first, x, y, plan.cut, rectH);
+      materialize(plan.second, x+plan.cut, y, rectW-plan.cut, rectH);
+      return;
+    }
+    if (plan.type === 'splitH'){
+      materialize(plan.first, x, y, rectW, plan.cut);
+      materialize(plan.second, x, y+plan.cut, rectW, rectH-plan.cut);
+      return;
+    }
+
+    const usedW = plan.nx * plan.pw;
+    const usedH = plan.ny * plan.ph;
+    if (!renderLimited){
+      for (let row=0; row<plan.ny; row++){
+        for (let col=0; col<plan.nx; col++){
+          cells.push({
+            x: fromUnits(x + col*plan.pw),
+            y: fromUnits(y + row*plan.ph),
+            w: fromUnits(plan.pw),
+            h: fromUnits(plan.ph),
+            orient: plan.orient
+          });
+        }
+      }
+    }
+    pushLeftover(x+usedW, y, rectW-usedW, rectH);
+    pushLeftover(x, y+usedH, usedW, rectH-usedH);
+  }
+
+  materialize(solved.plan, 0, 0, sheetW, sheetH);
+  return {
+    total: solved.count,
+    aCount: solved.aCount,
+    bCount: solved.bCount,
+    cells,
+    leftovers: mergeAdjacentRects(leftovers)
+      .map(r => ({x:fromUnits(r.x), y:fromUnits(r.y), w:fromUnits(r.w), h:fromUnits(r.h)})),
+    exact: solved.exact && !budgetExceeded,
+    renderLimited,
+    leftoversLimited,
+    statesVisited
+  };
 }
 
-function computeLeftoverRects(W, H, geo){
-  const rects = [];
-  const push = (x,y,w,h) => { if (w>0.01 && h>0.01) rects.push({x,y,w,h}); };
-
-  if (geo.splitDir === 'col'){
-    // leftover under the main block
-    push(0, geo.mainH, geo.mainW, H - geo.mainH);
-    // leftover under the extra block
-    push(geo.extraX, geo.extraY + geo.extraH, geo.extraW, H - (geo.extraY + geo.extraH));
-    // leftover to the right of everything
-    push(geo.extraX + geo.extraW, 0, W - (geo.extraX + geo.extraW), H);
-  } else {
-    // leftover to the right of the main block
-    push(geo.mainW, 0, W - geo.mainW, geo.mainH);
-    // leftover to the right of the extra block
-    push(geo.extraX + geo.extraW, geo.extraY, W - (geo.extraX + geo.extraW), geo.extraH);
-    // leftover below everything
-    push(0, geo.extraY + geo.extraH, W, H - (geo.extraY + geo.extraH));
+function mergeAdjacentRects(rects){
+  if (rects.length > MAX_RENDER_SCRAPS) return rects;
+  const merged = rects.map(r => ({...r}));
+  let changed = true;
+  while (changed){
+    changed = false;
+    outer: for (let i=0; i<merged.length; i++){
+      for (let j=i+1; j<merged.length; j++){
+        const a = merged[i], b = merged[j];
+        if (a.y === b.y && a.h === b.h && (a.x+a.w === b.x || b.x+b.w === a.x)){
+          merged[i] = {x:Math.min(a.x,b.x), y:a.y, w:a.w+b.w, h:a.h};
+        } else if (a.x === b.x && a.w === b.w && (a.y+a.h === b.y || b.y+b.h === a.y)){
+          merged[i] = {x:a.x, y:Math.min(a.y,b.y), w:a.w, h:a.h+b.h};
+        } else {
+          continue;
+        }
+        merged.splice(j,1);
+        changed = true;
+        break outer;
+      }
+    }
   }
-
-  return rects;
+  return merged;
 }
 
 function leftoverRectLabel(r, W, H){
@@ -764,7 +957,8 @@ function renderModeSelect(app){
   const grid = card.querySelector('#mode-grid');
   Object.keys(MODES).forEach(key => {
     const m = MODES[key];
-    const btn = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'mode-btn';
     btn.innerHTML = `
       <div class="mode-btn-title">${m.label}</div>
@@ -802,8 +996,10 @@ function renderStep1(app){
 
   const grid = card.querySelector('#preset-grid');
   modePresets.forEach((p, idx) => {
-    const btn = document.createElement('div');
+    const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'preset-btn' + (state.selectedPreset===idx ? ' selected':'');
+    btn.setAttribute('aria-pressed', state.selectedPreset===idx ? 'true' : 'false');
     const ratio = p.w/p.h;
     const iconW = ratio>=1 ? 40 : 40*ratio;
     const iconH = ratio>=1 ? 40/ratio : 40;
@@ -819,8 +1015,10 @@ function renderStep1(app){
     grid.appendChild(btn);
   });
 
-  const customBtn = document.createElement('div');
+  const customBtn = document.createElement('button');
+  customBtn.type = 'button';
   customBtn.className = 'preset-btn custom-toggle' + (state.selectedPreset===-1 ? ' selected':'');
+  customBtn.setAttribute('aria-pressed', state.selectedPreset===-1 ? 'true' : 'false');
   customBtn.innerHTML = `
     <div class="preset-icon"></div>
     <div class="preset-label">กำหนดเอง...</div>
@@ -836,18 +1034,18 @@ function renderStep1(app){
     customFields.innerHTML = `
       <div class="field-row">
         <div class="field">
-          <label>กว้าง</label>
-          <input type="number" min="0" step="0.1" id="cw" value="${state.customW}" placeholder="${state.customUnit === 'ซม.' ? 'เช่น 74' : 'เช่น 43'}">
+          <label for="cw">กว้าง</label>
+          <input type="number" min="0.1" max="500" step="0.1" id="cw" value="${escapeAttr(state.customW)}" placeholder="${state.customUnit === 'ซม.' ? 'เช่น 74' : 'เช่น 43'}">
         </div>
         <div class="field">
-          <label>ยาว</label>
-          <input type="number" min="0" step="0.1" id="ch" value="${state.customH}" placeholder="${state.customUnit === 'ซม.' ? 'เช่น 53' : 'เช่น 31'}">
+          <label for="ch">ยาว</label>
+          <input type="number" min="0.1" max="500" step="0.1" id="ch" value="${escapeAttr(state.customH)}" placeholder="${state.customUnit === 'ซม.' ? 'เช่น 53' : 'เช่น 31'}">
         </div>
         <div class="field">
           <label>หน่วย</label>
           <div class="unit-toggle" id="custom-unit-toggle">
-            <button type="button" class="unit-opt ${state.customUnit === 'นิ้ว' ? 'active' : ''}" data-unit="นิ้ว">นิ้ว</button>
-            <button type="button" class="unit-opt ${state.customUnit === 'ซม.' ? 'active' : ''}" data-unit="ซม.">ซม.</button>
+            <button type="button" class="unit-opt ${state.customUnit === 'นิ้ว' ? 'active' : ''}" data-unit="นิ้ว" aria-pressed="${state.customUnit === 'นิ้ว'}">นิ้ว</button>
+            <button type="button" class="unit-opt ${state.customUnit === 'ซม.' ? 'active' : ''}" data-unit="ซม." aria-pressed="${state.customUnit === 'ซม.'}">ซม.</button>
           </div>
         </div>
       </div>
@@ -856,18 +1054,42 @@ function renderStep1(app){
     customFields.querySelector('#ch').addEventListener('input', e => state.customH = e.target.value);
     customFields.querySelectorAll('#custom-unit-toggle .unit-opt').forEach(btn => {
       btn.addEventListener('click', () => {
-        state.customUnit = btn.dataset.unit;
+        const nextUnit = btn.dataset.unit;
+        if (nextUnit === state.customUnit) return;
+        state.customW = convertUnitInput(state.customW, state.customUnit, nextUnit);
+        state.customH = convertUnitInput(state.customH, state.customUnit, nextUnit);
+        state.customUnit = nextUnit;
         render();
       });
     });
   }
 
+  const codeWrap = document.createElement('div');
+  codeWrap.className = 'access-code-wrap';
+  codeWrap.innerHTML = `
+    <div class="field-row">
+      <div class="field">
+        <label for="access-code">รหัสสำหรับคำนวณ</label>
+        <input type="password" id="access-code" maxlength="20" autocomplete="off" spellcheck="false" placeholder="กรอกรหัส">
+      </div>
+    </div>
+  `;
+  card.querySelector('#custom-fields').after(codeWrap);
+  const accessCodeInput = codeWrap.querySelector('#access-code');
+  accessCodeInput.value = state.accessCode;
+  accessCodeInput.addEventListener('input', e => state.accessCode = e.target.value);
+
   card.querySelector('#next1').addEventListener('click', () => {
     const s = getBigSizeIn();
-    if (!s.w || !s.h || s.w<=0 || s.h<=0){
+    const sheetW = parseFiniteNumber(s.w);
+    const sheetH = parseFiniteNumber(s.h);
+    const widthCm = toCm(sheetW, s.unit);
+    const heightCm = toCm(sheetH, s.unit);
+    if (!Number.isFinite(sheetW) || !Number.isFinite(sheetH) || sheetW<=0 || sheetH<=0 ||
+        widthCm > MAX_SHEET_CM || heightCm > MAX_SHEET_CM){
       const err = card.querySelector('#err1');
       err.style.display = 'block';
-      err.textContent = 'กรุณาระบุขนาดกระดาษแผ่นใหญ่ให้ถูกต้อง';
+      err.textContent = `กรุณาระบุขนาดกระดาษแผ่นใหญ่ให้ถูกต้อง (ไม่เกิน ${MAX_SHEET_CM} ซม.)`;
       return;
     }
     state.error = '';
@@ -889,19 +1111,19 @@ function renderStep2(app){
     <div class="section-sub">กระดาษแผ่นใหญ่ที่เลือก: ${bigSizeText} — ใส่ขนาดกระดาษแผ่นเล็กที่ต้องการตัด (หน่วยเป็นเซนติเมตร)</div>
     <div class="field-row">
       <div class="field">
-        <label>กว้าง</label>
-        <input type="number" min="0" step="0.1" id="sw" value="${state.smallW}" placeholder="เช่น 25">
+        <label for="sw">กว้าง</label>
+        <input type="number" min="${MIN_PIECE_CM}" max="${MAX_SHEET_CM}" step="0.1" id="sw" value="${escapeAttr(state.smallW)}" placeholder="เช่น 25">
       </div>
       <div class="field">
-        <label>ยาว</label>
-        <input type="number" min="0" step="0.1" id="sh" value="${state.smallH}" placeholder="เช่น 35.5">
+        <label for="sh">ยาว</label>
+        <input type="number" min="${MIN_PIECE_CM}" max="${MAX_SHEET_CM}" step="0.1" id="sh" value="${escapeAttr(state.smallH)}" placeholder="เช่น 35.5">
       </div>
       <div class="field"><span class="unit">ซม.</span></div>
     </div>
     <div class="field-row">
       <div class="field qty-field">
-        <label>ต้องการกระดาษแผ่นเล็กกี่แผ่น (ไม่บังคับ)</label>
-        <input type="number" min="0" id="qty" value="${state.qty}" placeholder="เช่น 500">
+        <label for="qty">ต้องการกระดาษแผ่นเล็กกี่แผ่น (ไม่บังคับ)</label>
+        <input type="number" min="1" max="${MAX_QTY}" step="1" id="qty" value="${escapeAttr(state.qty)}" placeholder="เช่น 500">
       </div>
     </div>
     <div class="error-msg" id="err2" style="display:none;"></div>
@@ -917,15 +1139,23 @@ function renderStep2(app){
   card.querySelector('#qty').addEventListener('input', e => state.qty = e.target.value);
   card.querySelector('#back2').addEventListener('click', () => { state.step = 1; render(); });
   card.querySelector('#next2').addEventListener('click', () => {
-    const w = parseFloat(state.smallW), h = parseFloat(state.smallH);
-    if (!w || !h || w<=0 || h<=0){
-      const err = card.querySelector('#err2');
+    const w = parseFiniteNumber(state.smallW), h = parseFiniteNumber(state.smallH);
+    const err = card.querySelector('#err2');
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w<MIN_PIECE_CM || h<MIN_PIECE_CM ||
+        w>MAX_SHEET_CM || h>MAX_SHEET_CM){
       err.style.display = 'block';
-      err.textContent = 'กรุณาระบุขนาดกระดาษแผ่นเล็กให้ถูกต้อง';
+      err.textContent = `กรุณาระบุขนาดกระดาษแผ่นเล็กตั้งแต่ ${MIN_PIECE_CM} ถึง ${MAX_SHEET_CM} ซม.`;
       return;
     }
-    if (w > Math.max(sCm.w,sCm.h) && h > Math.max(sCm.w,sCm.h)){
-      const err = card.querySelector('#err2');
+    const qty = state.qty === '' ? null : parseFiniteNumber(state.qty);
+    if (qty !== null && (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY)){
+      err.style.display = 'block';
+      err.textContent = `จำนวนที่ต้องการต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง ${MAX_QTY.toLocaleString('th-TH')} แผ่น`;
+      return;
+    }
+    const fitsNormal = w <= sCm.w + 1e-9 && h <= sCm.h + 1e-9;
+    const fitsRotated = h <= sCm.w + 1e-9 && w <= sCm.h + 1e-9;
+    if (!fitsNormal && !fitsRotated){
       err.style.display = 'block';
       err.textContent = 'กระดาษแผ่นเล็กใหญ่เกินไป ไม่สามารถตัดจากกระดาษแผ่นใหญ่นี้ได้แม้แต่แผ่นเดียว';
       return;
@@ -938,7 +1168,53 @@ function renderStep2(app){
 function renderStep3(app){
   const sIn = getBigSizeIn();
   const W = toCm(sIn.w, sIn.unit), H = toCm(sIn.h, sIn.unit);
-  const w = parseFloat(state.smallW), h = parseFloat(state.smallH);
+  const w = parseFiniteNumber(state.smallW), h = parseFiniteNumber(state.smallH);
+
+  if (!hasValidAccessCode()){
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="size-frame">
+        <div class="size-box big">
+          <div class="size-swatch"></div>
+          <div class="size-text">
+            <div class="size-label">กระดาษแผ่นใหญ่</div>
+            <div class="size-value">${fmt(sIn.w)} × ${fmt(sIn.h)} ${sIn.unit}</div>
+          </div>
+        </div>
+        <div class="size-arrow">✂</div>
+        <div class="size-box small">
+          <div class="size-swatch" style="width:20px;height:20px;align-self:center;"></div>
+          <div class="size-text">
+            <div class="size-label">กระดาษแผ่นเล็ก</div>
+            <div class="size-value">${fmt(w)} × ${fmt(h)} ซม.</div>
+          </div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-sub">ตัดได้ทั้งหมด</div>
+        <div class="stat-headline">0<span class="unit">ตัวต่อ 1 แผ่นใหญ่</span></div>
+        <div class="breakdown">
+          <div class="breakdown-row"><div class="label">ผลการคำนวณ</div><div class="value">0 ตัว</div></div>
+        </div>
+        ${state.qty ? `
+          <div class="qty-box">
+            <div class="qty-primary"><div class="qty-label">ต้องใช้กระดาษแผ่นใหญ่</div><div class="headline">0<span class="unit">แผ่น</span></div></div>
+            <div class="qty-secondary"><div class="qty-label">แผ่นเล็กที่คำนวณได้</div><div class="headline-big">0<span class="unit">แผ่น</span></div></div>
+            <div class="sub">ผลคำนวณทั้งหมดเป็น 0</div>
+          </div>` : ''}
+      </div>
+      <div class="actions" style="margin-top:20px;">
+        <button class="btn btn-ghost" id="back-code">← ย้อนกลับ</button>
+        <button class="btn btn-ghost" id="restart3">เริ่มใหม่</button>
+      </div>
+    `;
+    app.appendChild(card);
+    card.querySelector('#back-code').addEventListener('click', () => { state.step = 1; render(); });
+    card.querySelector('#restart3').addEventListener('click', resetCalculator);
+    return;
+  }
+
   const best = computeBest(W, H, w, h);
 
   if (best.total === 0){
@@ -957,8 +1233,8 @@ function renderStep3(app){
     return;
   }
 
-  const mainInfo = orientLabel(best.mainOrient, w, h);
-  const extraInfo = best.extraCount>0 ? orientLabel(best.extraOrient, w, h) : null;
+  const aInfo = best.aCount > 0 ? orientLabel('A', w, h) : null;
+  const bInfo = best.bCount > 0 ? orientLabel('B', w, h) : null;
 
   const card = document.createElement('div');
   card.className = 'card';
@@ -988,14 +1264,19 @@ function renderStep3(app){
   const layout = document.createElement('div');
   layout.className = 'result-layout';
 
-  const leftoverRects = computeLeftoverRects(W, H, best.geo);
+  const leftoverRects = best.leftovers;
+  const renderedLeftovers = leftoverRects.slice(0, MAX_RENDER_SCRAPS);
 
   // ---- Diagram column ----
   const diagramWrap = document.createElement('div');
   diagramWrap.className = 'diagram-wrap';
   diagramWrap.innerHTML = `<div class="section-title" style="align-self:flex-start;">แผนผังการตัด</div>`;
   const svgHolder = document.createElement('div');
-  svgHolder.innerHTML = buildSVG(W, H, best.cells, null, null, leftoverRects);
+  svgHolder.innerHTML = buildSVG(
+    W, H, best.cells,
+    best.renderLimited ? 'แผนผังแบบย่อ' : null,
+    '#2954A3', renderedLeftovers
+  );
   diagramWrap.appendChild(svgHolder);
 
   const realLeftovers = leftoverRects.filter(r => !isNegligibleScrap(r));
@@ -1003,19 +1284,24 @@ function renderStep3(app){
   const legend = document.createElement('div');
   legend.className = 'legend';
   legend.innerHTML = `
-    <div class="legend-item"><span class="swatch" style="background:#2954A3;"></span> ${mainInfo.text} (${fmt(mainInfo.pw)}×${fmt(mainInfo.ph)} ซม.)</div>
-    ${extraInfo ? `<div class="legend-item"><span class="swatch" style="background:#1E8C7D;"></span> ${extraInfo.text} (${fmt(extraInfo.pw)}×${fmt(extraInfo.ph)} ซม.)</div>` : ''}
+    ${aInfo ? `<div class="legend-item"><span class="swatch" style="background:#2954A3;"></span> ${aInfo.text} (${fmt(aInfo.pw)}×${fmt(aInfo.ph)} ซม.)</div>` : ''}
+    ${bInfo ? `<div class="legend-item"><span class="swatch" style="background:#1E8C7D;"></span> ${bInfo.text} (${fmt(bInfo.pw)}×${fmt(bInfo.ph)} ซม.)</div>` : ''}
     ${realLeftovers.length ? `<div class="legend-item"><span class="swatch" style="background:#C0392B;"></span> เศษกระดาษ</div>` : ''}
   `;
   diagramWrap.appendChild(legend);
-  diagramWrap.innerHTML += `<div class="diagram-caption">เส้นประคือแนวตัด · ตัวเลขในแต่ละช่องคือขนาดกระดาษแผ่นเล็ก (ซม.)${realLeftovers.length ? ' · สีแดงคือเศษกระดาษ' : ''}</div>`;
+  const caption = document.createElement('div');
+  caption.className = 'diagram-caption';
+  caption.textContent = best.renderLimited || best.leftoversLimited
+    ? 'จำนวนชิ้นมาก จึงแสดงแผนผังแบบย่อเพื่อให้หน้าเว็บทำงานได้ลื่นไหล'
+    : `เส้นประคือแนวตัด · ตัวเลขในแต่ละช่องคือขนาดกระดาษแผ่นเล็ก (ซม.)${realLeftovers.length ? ' · สีแดงคือเศษกระดาษ' : ''}`;
+  diagramWrap.appendChild(caption);
 
   if (realLeftovers.length){
     const leftoverList = document.createElement('div');
     leftoverList.className = 'leftover-list';
-    leftoverList.innerHTML = realLeftovers
+    leftoverList.innerHTML = realLeftovers.slice(0,20)
       .map(r => `<div class="leftover-item"><span class="leftover-dot"></span>${leftoverRectLabel(r, W, H)} เศษ <b>${leftoverRectText(r)}</b></div>`)
-      .join('');
+      .join('') + (realLeftovers.length > 20 ? `<div class="diagram-caption">และเศษย่อยอีก ${realLeftovers.length-20} ส่วน</div>` : '');
     diagramWrap.appendChild(leftoverList);
   }
 
@@ -1030,21 +1316,21 @@ function renderStep3(app){
     <div class="stat-sub">ตัดได้ทั้งหมด</div>
     <div class="stat-headline">${best.total}<span class="unit">ตัวต่อ 1 แผ่นใหญ่</span></div>
     <div class="breakdown">
-      <div class="breakdown-row">
-        <div class="label"><span class="swatch" style="background:#2954A3;"></span>${mainInfo.text}</div>
-        <div class="value">${best.mainCount} ตัว</div>
-      </div>
-      ${extraInfo ? `
-      <div class="breakdown-row">
-        <div class="label"><span class="swatch" style="background:#1E8C7D;"></span>${extraInfo.text}</div>
-        <div class="value">${best.extraCount} ตัว</div>
-      </div>` : ''}
+       ${aInfo ? `<div class="breakdown-row">
+         <div class="label"><span class="swatch" style="background:#2954A3;"></span>${aInfo.text}</div>
+         <div class="value">${best.aCount} ตัว</div>
+       </div>` : ''}
+       ${bInfo ? `
+       <div class="breakdown-row">
+         <div class="label"><span class="swatch" style="background:#1E8C7D;"></span>${bInfo.text}</div>
+         <div class="value">${best.bCount} ตัว</div>
+       </div>` : ''}
     </div>
   `;
   statCol.appendChild(statCard);
 
-  if (state.qty && parseFloat(state.qty) > 0){
-    const qty = parseFloat(state.qty);
+  if (state.qty && Number(state.qty) > 0){
+    const qty = Number(state.qty);
     const sheetsNeeded = Math.ceil(qty / best.total);
     const leftover = sheetsNeeded*best.total - qty;
     const qtyBox = document.createElement('div');
@@ -1063,6 +1349,13 @@ function renderStep3(app){
     statCard.appendChild(qtyBox);
   }
 
+  if (!best.exact){
+    const warning = document.createElement('div');
+    warning.className = 'result-warning';
+    warning.textContent = 'รูปแบบนี้มีความซับซ้อนสูง ระบบแสดงผลลัพธ์ที่ดีที่สุดที่พบภายในขีดจำกัดความปลอดภัย';
+    statCol.appendChild(warning);
+  }
+
   layout.appendChild(statCol);
   card.appendChild(layout);
 
@@ -1078,10 +1371,16 @@ function renderStep3(app){
   app.appendChild(card);
 
   card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
-  card.querySelector('#restart3').addEventListener('click', () => {
-    state = { mode:null, step:1, selectedPreset:0, customW:'', customH:'', customUnit:'นิ้ว', smallW:'', smallH:'', qty:'', error:'' };
-    render();
-  });
+  card.querySelector('#restart3').addEventListener('click', resetCalculator);
+}
+
+function resetCalculator(){
+  state = {
+    mode:null, step:1, selectedPreset:0,
+    customW:'', customH:'', customUnit:'นิ้ว',
+    smallW:'', smallH:'', qty:'', accessCode:'', error:''
+  };
+  render();
 }
 
 function buildSVG(W, H, cells, watermark, watermarkColor, leftoverRects){
