@@ -884,6 +884,24 @@ function orientLabel(orient, w, h){
 
 function render(){
   const app = document.getElementById('app');
+  try {
+    renderInner(app);
+  } catch (e) {
+    try { console.error('paper-cut calculator: render failed', e); } catch(_e){}
+    app.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="section-title">เกิดข้อผิดพลาด</div>
+      <div class="section-sub">ขออภัย หน้านี้โหลดไม่สำเร็จ กรุณากดปุ่มด้านล่างเพื่อเริ่มใหม่ หรือรีเฟรชหน้าเว็บ</div>
+      <div class="actions" style="margin-top:20px;"><button class="btn btn-primary" id="global-err-restart">เริ่มใหม่</button></div>
+    `;
+    app.appendChild(card);
+    card.querySelector('#global-err-restart').addEventListener('click', resetCalculator);
+  }
+}
+
+function renderInner(app){
   app.innerHTML = '';
 
   const masthead = document.createElement('div');
@@ -1174,6 +1192,9 @@ function renderStep3(app){
     const card = document.createElement('div');
     card.className = 'card';
     card.innerHTML = `
+      <div class="result-warning" style="margin-top:0; margin-bottom:16px;">
+        <b>ยังไม่แสดงผลการคำนวณ</b> — กรุณากรอก &quot;รหัสสำหรับคำนวณ&quot; ให้ถูกต้องในขั้นตอนที่ 1 (เลือกกระดาษแผ่นใหญ่) ก่อน ผลลัพธ์ด้านล่างนี้เป็นเพียงตัวอย่าง (0) จนกว่าจะกรอกรหัสถูกต้อง
+      </div>
       <div class="size-frame">
         <div class="size-box big">
           <div class="size-swatch"></div>
@@ -1215,7 +1236,13 @@ function renderStep3(app){
     return;
   }
 
-  const best = computeBest(W, H, w, h);
+  let best;
+  try {
+    best = computeBest(W, H, w, h);
+  } catch (e) {
+    renderStep3Error(app, e);
+    return;
+  }
 
   if (best.total === 0){
     const card = document.createElement('div');
@@ -1232,6 +1259,8 @@ function renderStep3(app){
     card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
     return;
   }
+
+  try {
 
   const aInfo = best.aCount > 0 ? orientLabel('A', w, h) : null;
   const bInfo = best.bCount > 0 ? orientLabel('B', w, h) : null;
@@ -1372,6 +1401,31 @@ function renderStep3(app){
 
   card.querySelector('#back3').addEventListener('click', () => { state.step = 2; render(); });
   card.querySelector('#restart3').addEventListener('click', resetCalculator);
+
+  } catch (e) {
+    renderStep3Error(app, e);
+  }
+}
+
+// Fallback shown instead of leaving the results step blank if anything unexpected
+// goes wrong while computing/drawing the cut plan (unusual input combos, an
+// unsupported browser API, etc.) — so the user always sees *something* actionable
+// rather than an empty page, on any device.
+function renderStep3Error(app, err){
+  try { console.error('paper-cut calculator: renderStep3 failed', err); } catch(_e){}
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="section-title">เกิดข้อผิดพลาดในการคำนวณ</div>
+    <div class="section-sub">ขออภัย ระบบไม่สามารถแสดงผลลัพธ์ได้ในขณะนี้ กรุณาลองตรวจสอบขนาดที่กรอกอีกครั้ง หรือกดปุ่มด้านล่างเพื่อย้อนกลับ / เริ่มใหม่</div>
+    <div class="actions" style="margin-top:20px;">
+      <button class="btn btn-ghost" id="err3-back">← ย้อนกลับ</button>
+      <button class="btn btn-ghost" id="err3-restart">เริ่มใหม่</button>
+    </div>
+  `;
+  app.appendChild(card);
+  card.querySelector('#err3-back').addEventListener('click', () => { state.step = 2; render(); });
+  card.querySelector('#err3-restart').addEventListener('click', resetCalculator);
 }
 
 function resetCalculator(){
