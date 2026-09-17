@@ -323,6 +323,14 @@ display:flex;
 flex-direction:column;
 align-items:center;
 gap: 10px;
+max-width:100%;
+}
+/* buildSVG() ตั้งความกว้าง/สูงของ SVG เป็นพิกเซลตายตัว (จาก maxW/maxH ใน JS) โดยไม่มี CSS
+   จำกัดไว้ ทำให้แผนผังล้นจอในมือถือที่แคบกว่า - บังคับให้ย่อตามพื้นที่จริงเสมอ */
+.diagram-wrap svg{
+max-width:100%;
+height:auto;
+display:block;
 }
 .diagram-caption{
 font-family:'IBM Plex Mono', monospace;
